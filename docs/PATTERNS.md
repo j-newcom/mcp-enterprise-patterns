@@ -107,10 +107,63 @@ tool names return a `not_found` envelope rather than raising.
 
 ---
 
+## 6. Auth: validate, scope, never leak
+
+**Problem.** An MCP server exposed without authentication lets any caller invoke
+any tool. Even with auth, a common failure is logging the API key in error
+messages or returning it in structured error responses.
+
+**Pattern.** Three components:
+
+- `KeyRegistry` — stores API keys as SHA-256 hashes (never plaintext). Validates
+  incoming keys and returns the associated identity + role. Load from environment:
+
+```python
+# env: MCP_API_KEYS="key1:alice:admin,key2:bob:reader"
+registry = KeyRegistry.from_env("MCP_API_KEYS")
+entry = registry.validate(request_key)  # returns KeyEntry(identity, role) or raises AuthError
+```
+
+- `RoleManager` — maps roles to allowed tool sets. Wildcard `{"*"}` grants all.
+
+```python
+roles = RoleManager()
+roles.define("admin", {"*"})
+roles.define("reader", {"get_inventory", "get_forecast"})
+roles.check_access("reader", "create_po")  # raises ForbiddenError
+```
+
+- `@require_auth` — decorator that validates the key and checks the role before
+  the tool executes. Injects the caller's identity so the tool can use it.
+
+```python
+@require_auth(registry, roles)
+def get_inventory(args: dict, auth: KeyEntry = None) -> dict:
+    # auth.identity = "alice", auth.role = "admin"
+    ...
+```
+
+**Security guarantees:**
+- Keys are hashed with SHA-256 — the registry never stores plaintext.
+- `AuthError` and `ForbiddenError` messages **never** contain the presented key.
+- The `redact()` function (from observability) catches `api_key`, `token`,
+  `authorization` in log output — but auth errors are additionally hardened to
+  never echo the credential even in the `details` dict.
+
+**Rule of thumb.** Auth should fail closed: if the key is missing, empty, or
+invalid, reject immediately. Never fall through to a "default" identity.
+
+See `examples/reference_server/auth_demo.py` for the full pattern wired into a
+working server with admin + reader roles.
+
+---
+
 ## Putting it together
 
-See `examples/reference_server/server.py` for a complete server that uses all
-five patterns. The composition order matters: **timing wraps the raw call**
+See `examples/reference_server/server.py` for a server using the core five
+patterns, and `examples/reference_server/auth_demo.py` for the full six-module
+stack with authentication. The composition order matters: **timing wraps the raw call**
 (so it can measure and log even a failure), and **safe_tool wraps the timed call**
-(so the logged failure still becomes a clean client response). The registry does
-this for you.
+(so the logged failure still becomes a clean client response). Auth validates
+*before* dispatch — if the caller lacks permission, the tool never fires.
+The registry handles timing + safe_tool; auth wraps the dispatch layer.
