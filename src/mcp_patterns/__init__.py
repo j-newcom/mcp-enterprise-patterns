@@ -6,6 +6,7 @@ Modules:
     validation      defensive input validation helpers
     observability   JSON logging, secret redaction, @timed
     tool_registry   register + dispatch tools (auto crash-proof + observable)
+    auth            API key validation, role-based scoping, @require_auth
 """
 
 from .config import ConfigError, ServerConfig, get_bool, get_float, get_int, get_str
@@ -21,6 +22,7 @@ from .errors import (
 )
 from .observability import DEFAULT_SENSITIVE_KEYS, get_logger, redact, timed
 from .tool_registry import ToolRegistry, ToolSpec
+from .auth import AuthError, ForbiddenError, KeyRegistry, RoleManager, require_auth
 from .validation import (
     optional_str,
     require,
@@ -36,6 +38,7 @@ __all__ = [
     "DEFAULT_SENSITIVE_KEYS", "get_logger", "redact", "timed",
     "ToolRegistry", "ToolSpec",
     "require", "require_str", "require_int", "require_enum", "optional_str",
+    "AuthError", "ForbiddenError", "KeyRegistry", "RoleManager", "require_auth",
 ]
 
 __version__ = "0.1.0"
